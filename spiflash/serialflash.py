@@ -930,6 +930,49 @@ class W25xFlashDevice(_Gen25FlashDevice):
         self._wait_for_completion(times)
 
 
+class MT25QFlashDevice(_Gen25FlashDevice):
+    """Micron MT25Q flash device implementation"""
+
+    JEDEC_ID = 0x20
+    DEVICES = {0xBA: 'MT25Q', 0xBB: 'MT25QU'}
+    SIZES = {0x17: 8 << 20, 0x18: 16 << 20, 0x19: 32 << 20,
+            0x20: 64 << 20, 0x21: 128 << 20, 0x22: 256 << 20}
+    SPI_FREQ_MAX = 166  # MHz
+    CMD_READ_UID = 0x9F
+    UID_LEN = 14  # 14 bytes
+    READ_UID_WIDTH = 6  # 6 dummy bytes
+    TIMINGS = {'page': (0.00012, 0.0018),  # 0.12/1.8 ms
+               'subsector': (0.050, 0.400),  # 50/400 ms
+               'sector': (0.15, 1.0),  # 0.15/1 s
+               'bulk': (32, 64),  # seconds
+               'lock': (0.0001, 0.0028),  # 0.1/2.8 ms
+               'chip': (12, 460) # ds has 153 typ / 460 max but we want faster
+               }
+    FEATURES = (SerialFlash.FEAT_SECTERASE |
+                SerialFlash.FEAT_SUBSECTERASE |
+                SerialFlash.FEAT_CHIPERASE)
+
+    def __init__(self, spi, jedec):
+        super(MT25QFlashDevice, self).__init__(spi)
+        if not MT25QFlashDevice.match(jedec):
+            raise SerialFlashUnknownJedec(jedec)
+        device, capacity = jedec[1:3]
+        self._device = self.DEVICES[device]
+        self._size = MT25QFlashDevice.SIZES[capacity]
+
+    def __str__(self):
+        return 'Micron %s%d %s' % \
+            (self._device, len(self) >> 17,
+             pretty_size(self._size, lim_m=1 << 20))
+
+    def _erase_chip(self, command: int, times: Tuple[float, float]):
+        """Erase an entire chip"""
+        self._enable_write()
+        cmd = bytes((command,))
+        self._spi.exchange(cmd)
+        self._wait_for_completion(times)
+
+
 class Mx25lFlashDevice(_Gen25FlashDevice):
     """Macronix MX25L flash device implementation"""
 
