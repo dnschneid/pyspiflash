@@ -481,7 +481,8 @@ class _SpiFlashDevice(SerialFlash):
             # need to wait at least once
             if cycle and time.time() > timeout:
                 raise SerialFlashTimeout('Command timeout (%d cycles)' % cycle)
-            time.sleep(typical_time)
+            # poll quickly so we don't accumulate a lot of time
+            time.sleep(min(typical_time, 0.01))
             cycle += 1
 
     def _erase_blocks(self, erase_type: str,
@@ -898,14 +899,16 @@ class W25xFlashDevice(_Gen25FlashDevice):
     CMD_READ_UID = 0x4B
     UID_LEN = 0x8  # 64 bits
     READ_UID_WIDTH = 4  # 4 dummy bytes
-    TIMINGS = {'page': (0.0015, 0.003),  # 1.5/3 ms
-               'subsector': (0.200, 0.200),  # 200/200 ms
-               'sector': (1.0, 1.0),  # 1/1 s
+    TIMINGS = {'page': (0.0003, 0.003),      #   256 B -> 1 page
+               'subsector': (0.060, 0.200),  #  4096 B -> 16 pages
+               'hsector': (0.170, 0.800),    # 32768 B -> 128 pages
+               'sector': (0.22, 2.0),        # 65536 B -> 256 pages
+               'chip': (120, 400),
                'bulk': (32, 64),  # seconds
                'lock': (0.05, 0.1),  # 50/100 ms
-               'chip': (12, 400) # ds has 120 typ / 400 max but we want faster
                }
     FEATURES = (SerialFlash.FEAT_SECTERASE |
+                SerialFlash.FEAT_HSECTERASE |
                 SerialFlash.FEAT_SUBSECTERASE |
                 SerialFlash.FEAT_CHIPERASE)
 
