@@ -946,12 +946,14 @@ class MT25QFlashDevice(_Gen25FlashDevice):
     READ_UID_WIDTH = 6  # 6 dummy bytes
     TIMINGS = {'page': (0.00012, 0.0018),  # 0.12/1.8 ms
                'subsector': (0.050, 0.400),  # 50/400 ms
+               'hsector': (0.1, 1.0),  # 0.10/1 s
                'sector': (0.15, 1.0),  # 0.15/1 s
                'bulk': (32, 64),  # seconds
                'lock': (0.0001, 0.0028),  # 0.1/2.8 ms
-               'chip': (12, 460) # ds has 153 typ / 460 max but we want faster
+               'chip': (153, 460) # 153 typ / 460 max seconds
                }
     FEATURES = (SerialFlash.FEAT_SECTERASE |
+                SerialFlash.FEAT_HSECTERASE |
                 SerialFlash.FEAT_SUBSECTERASE |
                 SerialFlash.FEAT_CHIPERASE)
 
