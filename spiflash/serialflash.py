@@ -333,9 +333,14 @@ class _SpiFlashDevice(SerialFlash):
     def read(self, address: int, length: int) -> bytes:
         if address+length > len(self):
             raise SerialFlashValueError('Out of range')
+        max_length = getattr(
+            self,
+            "payload_max_length",
+            SpiController.PAYLOAD_MAX_LENGTH
+        )
         buf = bytearray()
         while length > 0:
-            size = min(length, SpiController.PAYLOAD_MAX_LENGTH)
+            size = min(length, max_length)
             data = self._read_hi_speed(address, size)
             length -= len(data)
             address += len(data)
