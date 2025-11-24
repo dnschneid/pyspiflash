@@ -22,7 +22,8 @@
 import sys
 import time
 from binascii import hexlify
-from typing import Iterable, Optional, Tuple, Union
+from functools import wraps
+from typing import Callable, Iterable, Optional, Tuple, Union
 from pyftdi.misc import pretty_size
 from pyftdi.spi import SpiController, SpiPort
 
@@ -196,6 +197,35 @@ class SerialFlash:
            :return: True if the current class supports the detected device.
         """
         raise NotImplementedError()
+
+    @staticmethod
+    def timeit(max_samples: int=100) -> Callable:
+        """Decorator that times function calls and stores the results."""
+        def wrapper(f):
+            @wraps(f)
+            def wrap(self, *args, **kw):
+                start = time.perf_counter_ns()
+                ret = f(self, *args, **kw)
+                elapsed = time.perf_counter_ns() - start
+                samples_dict = getattr(self, "__timeit", {})
+                if not samples_dict:
+                    setattr(self, "__timeit", samples_dict)
+                sample_info = samples_dict.setdefault(f.__name__, [[], 0])
+                if len(sample_info[0]) >= max_samples:
+                    sample_info[1] %= len(sample_info[0])
+                    sample_info[0][sample_info[1]] = elapsed
+                    sample_info[1] += 1
+                else:
+                    sample_info[0].append(elapsed)
+                return ret
+            return wrap
+        if callable(max_samples):
+            wrapper = wrapper(max_samples)
+            max_samples = 100
+        return wrapper
+
+    def get_timeit_samples_ns(self, fn: Callable) -> Optional[list[int]]:
+        return getattr(self, "__timeit", {}).get(fn.__name__, [None])[0]
 
 
 class SerialFlashManager:
@@ -474,6 +504,19 @@ class _SpiFlashDevice(SerialFlash):
 
     def _wait_for_completion(self, times: Tuple[float, float]) -> None:
         typical_time, max_time = times
+        # is_busy() is basically an instant, no-op instruction.
+        # If we assume the overhead of setting up the instruction is much
+        # bigger than the time executing the instruction, then we can assume
+        # returning from the previous instruction and starting the next one
+        # will be the same amount of overhead and can subtract the status check
+        # time from the maximum wait time.
+        # At that point we might have less time to wait than executing the
+        # actual status check function, so speed that up.
+        is_busy_samples = self.get_timeit_samples_ns(self.is_busy) or (0,)
+        min_is_busy = min(is_busy_samples) / 1e9
+        if max_time < 2 * min_is_busy:
+            time.sleep(max(max_time - min_is_busy, 0))
+            return
         timeout = time.time()
         timeout += typical_time+max_time
         cycle = 0
@@ -617,6 +660,7 @@ class _Gen25FlashDevice(_SpiFlashDevice):
         if status & _Gen25FlashDevice.SR_PROTECT_ALL:
             raise SerialFlashRequestError("Cannot unprotect flash device")
 
+    @SerialFlash.timeit
     def is_busy(self) -> bool:
         return self._is_busy(self._read_status())
 
@@ -1389,6 +1433,7 @@ class At45FlashDevice(_SpiFlashDevice):
         if any(duration):
             self._wait_for_completion(duration)
 
+    @SerialFlash.timeit
     def is_busy(self):
         return self._is_busy(self._read_status())
 
